@@ -1,13 +1,22 @@
 # config/settings_simple.py (renomeie para settings.py)
+import json
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
-import json
 
 load_dotenv()
 
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Caminhos
+VIDEOS_DIR = BASE_DIR / 'storage' / 'videos'
+EDITED_DIR = BASE_DIR / 'storage' / 'edited'
+TEMP_DIR = BASE_DIR / 'storage' / 'temp'
+LOGS_DIR = BASE_DIR / 'logs'
+
+# Limites
+DAILY_VIDEO_LIMIT = 10  # Máx vídeos por dia
 
 
 class Settings:

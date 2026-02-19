@@ -1,14 +1,13 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from telegram.constants import ParseMode
-
-from config.constants import START_MESSAGE
-from database.models import init_db
-from database.models import User
-from bot.keyboards.inline import get_main_keyboard
-
-
 import logging
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
+from telegram.ext import ContextTypes
+
+from bot.keyboards.inline import get_main_keyboard
+from config.constants import START_MESSAGE
+from database.models import User, init_db
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler do comando /start"""

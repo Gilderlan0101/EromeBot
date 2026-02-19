@@ -3,10 +3,11 @@ Sistema de Logging do Erome Bot
 Módulo logging padrão do Python com formatação colorida e níveis detalhados
 """
 
-import sys
 import logging
-from pathlib import Path
+import sys
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 import colorama
 from colorama import Fore, Style
 

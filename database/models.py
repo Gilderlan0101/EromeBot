@@ -1,21 +1,13 @@
-from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
-    String,
-    DateTime,
-    Boolean,
-    Float,
-    ForeignKey,
-    Text,
-)
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+import json
+import os
 from datetime import datetime
 from typing import Optional
+
 from dotenv import load_dotenv
-import os
-import json
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
+                        String, Text, create_engine)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
 
 load_dotenv()
 Base = declarative_base()
@@ -176,9 +168,12 @@ class ScrapeLog(Base):
         return f'<ScrapeLog {self.created_at} - {self.videos_new} novos>'
 
 
-
 # Criar engine e sessão
-def init_db(database_url: Optional[str] = os.getenv('DATABASE_URL', 'sqlite:///erome_bot.db')):
+def init_db(
+    database_url: Optional[str] = os.getenv(
+        'DATABASE_URL', 'sqlite:///erome_bot.db'
+    )
+):
     engine = create_engine(str(database_url))
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
