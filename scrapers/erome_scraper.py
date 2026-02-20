@@ -8,6 +8,7 @@ import asyncio
 import re
 import time
 import uuid
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -20,15 +21,43 @@ from config.custom_logger import setup_logger
 from config.settings import settings
 from database.models import ScrapeLog, Video, init_db
 
-# Configurar logger (isso deve ser feito ANTES de usar os loggers especializados)
+# Configurar logger
 logger = setup_logger()
 
-# AGORA podemos importar os loggers especializados
+# Importar loggers especializados
 from config.custom_logger import scraping_logger, video_logger
 
 
 class EromeScraper:
     """Scraper para Erome usando requests (sem navegador)"""
+
+    # LISTA DE URLs PARA SCRAPING
+    SEARCH_URLS = [
+        "https://www.erome.com/search?q=novinhas",
+        "https://www.erome.com/search?q=bundas",
+        "https://www.erome.com/search?q=brasileiras",
+        "https://www.erome.com/search?q=vazados",
+        "https://www.erome.com/search?q=onlyfans",
+        "https://www.erome.com/search?q=amadoras",
+        "https://www.erome.com/search?q=gostosas",
+        "https://www.erome.com/search?q=safadas",
+        "https://www.erome.com/search?q=novinhas+brasileiras",
+        "https://www.erome.com/search?q=br",
+        "https://www.erome.com/explore",
+        "https://www.erome.com/search?q=hot",
+        "https://www.erome.com/search?q=sexy",
+        "https://www.erome.com/search?q=vip",
+        "https://www.erome.com/search?q=privado",
+    ]
+
+    # User Agents diferentes para evitar bloqueio
+    USER_AGENTS = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
+        'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0',
+    ]
 
     def __init__(self, timeout: int = 30):
         """
@@ -39,15 +68,21 @@ class EromeScraper:
         """
         self.timeout = timeout
         self.session = requests.Session()
-        self.session.headers.update(
-            {
-                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Referer': 'https://www.erome.com/',
-            }
-        )
-        scraping_logger.info('Inicializando scraper Erome (modo requests)')
+        self.current_url_index = 0
+        self.update_headers()
+        scraping_logger.info('Inicializando scraper Erome com múltiplas URLs')
+
+    def update_headers(self):
+        """Atualiza headers com User Agent aleatório"""
+        self.session.headers.update({
+            'User-Agent': random.choice(self.USER_AGENTS),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://www.erome.com/',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        })
 
     def safe_get(self, url: str) -> Optional[str]:
         """
@@ -60,6 +95,9 @@ class EromeScraper:
             str: Conteúdo HTML ou None se erro
         """
         try:
+            # Rotacionar User Agent
+            self.update_headers()
+
             scraping_logger.debug(f'Acessando: {url}')
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
@@ -71,11 +109,9 @@ class EromeScraper:
             scraping_logger.error(f'Erro na requisição {url}: {e}')
             return None
 
-    def extract_album_links(
-        self, html: str, max_albums: int = 20
-    ) -> List[str]:
+    def extract_album_links(self, html: str, max_albums: int = 20) -> List[str]:
         """
-        Extrai links de álbuns do HTML da página explore
+        Extrai links de álbuns do HTML
 
         Args:
             html: Conteúdo HTML da página
@@ -92,11 +128,7 @@ class EromeScraper:
             for link in soup.find_all('a', href=True):
                 href = link['href']
                 if '/a/' in href:
-                    full_url = (
-                        href
-                        if href.startswith('http')
-                        else f'https://www.erome.com{href}'
-                    )
+                    full_url = href if href.startswith('http') else f'https://www.erome.com{href}'
                     if full_url not in album_links:
                         album_links.append(full_url)
 
@@ -140,16 +172,29 @@ class EromeScraper:
                 username = user_tag.get_text().strip()
 
             # Extrair URLs de vídeos (MP4)
-            # Método 1: tags video
             for video in soup.find_all('video'):
                 src = video.get('src')
                 if src and src.endswith('.mp4'):
                     video_id = str(uuid.uuid4())[:8]
-                    video_url = (
-                        src if src.startswith('http') else f'https:{src}'
-                    )
-                    videos_data.append(
-                        {
+                    video_url = src if src.startswith('http') else f'https:{src}'
+                    videos_data.append({
+                        'id': video_id,
+                        'url': video_url,
+                        'album_url': album_url,
+                        'album_title': album_title,
+                        'username': username,
+                        'title': f'{album_title} - {username}',
+                        'source': 'erome',
+                    })
+
+            # Tags source
+            for source in soup.find_all('source'):
+                src = source.get('src')
+                if src and src.endswith('.mp4'):
+                    video_id = str(uuid.uuid4())[:8]
+                    video_url = src if src.startswith('http') else f'https:{src}'
+                    if not any(v['url'] == video_url for v in videos_data):
+                        videos_data.append({
                             'id': video_id,
                             'url': video_url,
                             'album_url': album_url,
@@ -157,66 +202,70 @@ class EromeScraper:
                             'username': username,
                             'title': f'{album_title} - {username}',
                             'source': 'erome',
-                        }
-                    )
+                        })
 
-            # Método 2: tags source
-            for source in soup.find_all('source'):
-                src = source.get('src')
-                if src and src.endswith('.mp4'):
-                    video_id = str(uuid.uuid4())[:8]
-                    video_url = (
-                        src if src.startswith('http') else f'https:{src}'
-                    )
-                    if not any(v['url'] == video_url for v in videos_data):
-                        videos_data.append(
-                            {
-                                'id': video_id,
-                                'url': video_url,
-                                'album_url': album_url,
-                                'album_title': album_title,
-                                'username': username,
-                                'title': f'{album_title} - {username}',
-                                'source': 'erome',
-                            }
-                        )
-
-            # Método 3: regex no HTML para encontrar URLs MP4
+            # Regex como fallback
             if not videos_data:
                 mp4_pattern = r'(https?://[^\s"\']+?\.mp4)'
                 mp4_urls = re.findall(mp4_pattern, html)
                 for url in mp4_urls:
                     video_id = str(uuid.uuid4())[:8]
                     if not any(v['url'] == url for v in videos_data):
-                        videos_data.append(
-                            {
-                                'id': video_id,
-                                'url': url,
-                                'album_url': album_url,
-                                'album_title': album_title,
-                                'username': username,
-                                'title': f'{album_title} - {username}',
-                                'source': 'erome',
-                            }
-                        )
+                        videos_data.append({
+                            'id': video_id,
+                            'url': url,
+                            'album_url': album_url,
+                            'album_title': album_title,
+                            'username': username,
+                            'title': f'{album_title} - {username}',
+                            'source': 'erome',
+                        })
 
-            scraping_logger.info(
-                f'Encontrados {len(videos_data)} vídeos em {album_url}'
-            )
+            scraping_logger.info(f'Encontrados {len(videos_data)} vídeos em {album_url}')
 
         except Exception as e:
-            scraping_logger.error(
-                f'Erro ao extrair vídeos de {album_url}: {e}'
-            )
+            scraping_logger.error(f'Erro ao extrair vídeos de {album_url}: {e}')
 
         return videos_data
 
-    async def scrape_daily(self, limit: int = 20) -> List[Dict]:
+    async def scrape_from_url(self, url: str, limit: int = 10) -> List[Dict]:
         """
-        Versão para uso no job diário - processa múltiplos álbuns
+        Faz scraping de uma URL específica
 
         Args:
-            limit: Número máximo de álbuns para processar
+            url: URL para fazer scraping
+            limit: Limite de álbuns
+
+        Returns:
+            Lista de vídeos encontrados
+        """
+        videos = []
+
+        try:
+            scraping_logger.info(f'Scraping da URL: {url}')
+
+            html = self.safe_get(url)
+            if not html:
+                return videos
+
+            album_urls = self.extract_album_links(html, max_albums=limit)
+
+            for album_url in album_urls:
+                album_videos = self.extract_video_data_from_album(album_url)
+                videos.extend(album_videos)
+                time.sleep(2)  # Delay entre álbuns
+
+        except Exception as e:
+            scraping_logger.error(f'Erro no scraping de {url}: {e}')
+
+        return videos
+
+    async def scrape_daily(self, limit: int = 30) -> List[Dict]:
+        """
+        Versão para uso no job diário - processa múltiplas URLs
+
+        Args:
+            limit: Número máximo de vídeos para retornar
 
         Returns:
             Lista de dados dos vídeos encontrados
@@ -224,49 +273,29 @@ class EromeScraper:
         start_time = time.time()
         all_videos = []
 
+        # Embaralhar URLs para variar
+        urls = random.sample(self.SEARCH_URLS, min(5, len(self.SEARCH_URLS)))
+
         try:
-            scraping_logger.info(
-                f'Iniciando scraping diário (limite: {limit} álbuns)'
-            )
+            scraping_logger.info(f'🚀 Iniciando scraping de {len(urls)} URLs diferentes')
 
-            # Acessar página explore
-            html = self.safe_get('https://www.erome.com/search?q=novinhas')
-            if not html:
-                scraping_logger.error('Falha ao carregar página explore')
-                return all_videos
+            for i, url in enumerate(urls, 1):
+                scraping_logger.info(f'URL {i}/{len(urls)}: {url}')
 
-            # Extrair álbuns
-            album_urls = self.extract_album_links(html, max_albums=limit)
+                videos = await self.scrape_from_url(url, limit=5)
 
-            # Processar cada álbum
-            for i, album_url in enumerate(album_urls, 1):
-                scraping_logger.info(
-                    f'Processando álbum {i}/{len(album_urls)}'
-                )
+                # Verificar duplicatas com banco
+                session = init_db()
+                for video in videos:
+                    existing = session.query(Video).filter_by(source_url=video['url']).first()
+                    if not existing:
+                        all_videos.append(video)
+                session.close()
 
-                try:
-                    videos = self.extract_video_data_from_album(album_url)
+                # Delay entre URLs
+                await asyncio.sleep(5)
 
-                    # Verificar se vídeos já existem no banco
-                    session = init_db()
-                    for video_data in videos:
-                        existing = (
-                            session.query(Video)
-                            .filter_by(source_url=video_data['url'])
-                            .first()
-                        )
-                        if not existing:
-                            all_videos.append(video_data)
-                    session.close()
-
-                    # Delay entre requisições
-                    time.sleep(1)
-
-                except Exception as e:
-                    scraping_logger.error(f'Erro no álbum {album_url}: {e}')
-                    continue
-
-            # Remover duplicatas
+            # Remover duplicatas da lista
             unique_videos = []
             seen_urls = set()
             for video in all_videos:
@@ -274,11 +303,14 @@ class EromeScraper:
                     seen_urls.add(video['url'])
                     unique_videos.append(video)
 
+            # Limitar quantidade
+            unique_videos = unique_videos[:limit]
+
             # Salvar log
             session = init_db()
             scrape_log = ScrapeLog(
                 source='erome',
-                albums_found=len(album_urls),
+                albums_found=len(unique_videos),
                 videos_found=len(all_videos),
                 videos_new=len(unique_videos),
                 duration=time.time() - start_time,
@@ -287,18 +319,14 @@ class EromeScraper:
             session.commit()
             session.close()
 
-            scraping_logger.info(
-                f'Scraping concluído! {len(unique_videos)} novos vídeos'
-            )
+            scraping_logger.info(f'✅ Scraping concluído! {len(unique_videos)} novos vídeos')
             return unique_videos
 
         except Exception as e:
-            scraping_logger.error(f'Erro no scraping diário: {e}')
+            scraping_logger.error(f'❌ Erro no scraping diário: {e}')
             return []
 
-    async def download_video(
-        self, video_url: str, output_path: Path
-    ) -> Optional[Path]:
+    async def download_video(self, video_url: str, output_path: Path) -> Optional[Path]:
         """
         Baixa um vídeo usando yt-dlp
 
@@ -320,25 +348,20 @@ class EromeScraper:
             # Comando yt-dlp com headers
             cmd = [
                 'yt-dlp',
-                '--add-header',
-                'Referer:https://www.erome.com/',
-                '--add-header',
-                'User-Agent:Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
-                '-o',
-                str(output_path),
+                '--add-header', 'Referer:https://www.erome.com/',
+                '--add-header', f'User-Agent:{random.choice(self.USER_AGENTS)}',
+                '-o', str(output_path),
                 video_url,
             ]
 
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
             if result.returncode == 0 and output_path.exists():
                 size_mb = output_path.stat().st_size / (1024 * 1024)
-                video_logger.info(f'Download concluído: {size_mb:.2f} MB')
+                video_logger.info(f'✅ Download concluído: {size_mb:.2f} MB')
                 return output_path
             else:
-                video_logger.error(f'Erro no download: {result.stderr[:200]}')
+                video_logger.error(f'❌ Erro no download: {result.stderr[:200]}')
                 return None
 
         except subprocess.TimeoutExpired:

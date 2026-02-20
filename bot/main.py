@@ -299,8 +299,9 @@ class EromeBot:
                     'test_job', self.test_job_command, filters=admin_filter
                 )
             )
-        # Handler de start
-        self.app.add_handler(CommandHandler('start', self.start_command))
+
+        # Handler de start - USANDO O DO ARQUIVO start.py
+        self.app.add_handler(CommandHandler('start', start.start_command))
 
         # Handlers de comando existentes
         self.app.add_handler(CommandHandler('help', start.help_command))
@@ -311,10 +312,14 @@ class EromeBot:
         self.app.add_handler(CommandHandler('ultimos', videos.last_videos))
 
         # Handlers de callback
+        # Deve estar assim - SEM pattern ou com pattern='^sub_'
         self.app.add_handler(
-            CallbackQueryHandler(
-                subscription.handle_subscription, pattern='^sub_'
-            )
+        CallbackQueryHandler(subscription.handle_subscription)  # SEM pattern para testar
+        )
+
+        # Adicionar callback para últimos vídeos
+        self.app.add_handler(
+            CallbackQueryHandler(videos.last_videos_callback, pattern='^last_videos$')
         )
 
         # Handler de mensagens de texto

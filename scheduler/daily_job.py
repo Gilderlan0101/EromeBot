@@ -237,8 +237,8 @@ class DailyJobScheduler:
                             source_album=video_data['album_url'],
                             title=video_data['title'][:200],
                             duration=duration,
-                            original_path=str(video_path),
-                            edited_path=str(edited_path),
+                            original_path=str(video_path),  # Caminho original
+                            edited_path=str(edited_path),    # Caminho do vídeo editado (CORRETO)
                             source='erome',
                             username=video_data['username'],
                             is_processed=True,

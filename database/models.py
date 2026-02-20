@@ -40,9 +40,11 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
 
-    # Relacionamentos
-    payments = relationship('Payment', back_populates='user')
+    # Relacionamentos - ajustados para evitar conflitos
+    old_payments = relationship('Payment', back_populates='user', cascade='all, delete-orphan')
+    pix_payments = relationship('PixPayment', back_populates='user', cascade='all, delete-orphan')
     watched_videos = relationship('VideoWatch', back_populates='user')
+    subscription = relationship('UserSubscription', back_populates='user', uselist=False, cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<User {self.telegram_id} - {self.username}>'
@@ -100,13 +102,12 @@ class Video(Base):
 
 
 class Payment(Base):
-    """Modelo de pagamento"""
-
+    """Modelo de pagamento original (mantido para compatibilidade)"""
     __tablename__ = 'payments'
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'))
-    user = relationship('User', back_populates='payments')
+    user = relationship('User', back_populates='old_payments')
 
     # Transação
     transaction_id = Column(String(100), unique=True)
@@ -118,9 +119,7 @@ class Payment(Base):
     period_type = Column(String(20))  # 'weekly' or 'monthly'
 
     # Status
-    status = Column(
-        String(20), default='pending'
-    )  # pending, paid, expired, cancelled
+    status = Column(String(20), default='pending')
     paid_at = Column(DateTime)
     expires_at = Column(DateTime)
 
@@ -168,12 +167,130 @@ class ScrapeLog(Base):
         return f'<ScrapeLog {self.created_at} - {self.videos_new} novos>'
 
 
+class Plan(Base):
+    """Modelo de planos de assinatura"""
+    __tablename__ = 'plans'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), nullable=False)
+    description = Column(String(200))
+    price = Column(Float, nullable=False)
+    days = Column(Integer, nullable=False)  # Duração em dias
+    features = Column(String(500))  # Lista de features separadas por vírgula
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relacionamentos
+    payments = relationship("PixPayment", back_populates="plan")
+
+    @property
+    def formatted_price(self):
+        """Retorna preço formatado"""
+        return f"R$ {self.price:.2f}".replace('.', ',')
+
+    @property
+    def duration_text(self):
+        """Retorna texto da duração"""
+        if self.days == 9999:
+            return "Vitalício"
+        return f"{self.days} dias"
+
+    def __repr__(self):
+        return f"<Plan {self.name} - R${self.price}>"
+
+
+class PixPayment(Base):
+    """Modelo de pagamentos PIX"""
+    __tablename__ = 'pix_payments'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    plan_id = Column(Integer, ForeignKey('plans.id'), nullable=False)
+    amount = Column(Float, nullable=False)
+    status = Column(String(20), default='pending')  # pending, paid, expired, cancelled
+    payment_method = Column(String(20), default='pix')
+    pix_code = Column(String(500))  # Código PIX copia e cola
+    pix_qr_code = Column(String(1000))  # Base64 do QR Code
+    transaction_id = Column(String(100), unique=True)
+    expires_at = Column(DateTime)
+    paid_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relacionamentos - nomes diferentes para evitar conflitos
+    user = relationship("User", back_populates="pix_payments")
+    plan = relationship("Plan", back_populates="payments")
+
+    @property
+    def is_expired(self):
+        """Verifica se o pagamento expirou"""
+        return datetime.utcnow() > self.expires_at if self.expires_at else False
+
+    @property
+    def time_remaining(self):
+        """Tempo restante para expirar"""
+        if not self.expires_at or self.is_expired:
+            return "Expirado"
+        delta = self.expires_at - datetime.utcnow()
+        minutes = int(delta.total_seconds() / 60)
+        return f"{minutes} minutos"
+
+    def __repr__(self):
+        return f"<PixPayment {self.id} - {self.status}>"
+
+
+class UserSubscription(Base):
+    """Modelo de assinaturas de usuários"""
+    __tablename__ = 'user_subscriptions'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True, index=True)
+    plan_id = Column(Integer, ForeignKey('plans.id'))
+    username = Column(String(100))
+    first_name = Column(String(100))
+    is_active = Column(Boolean, default=False)
+    expires_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relacionamentos
+    user = relationship("User", back_populates="subscription")
+    plan = relationship("Plan")
+
+    @property
+    def days_remaining(self):
+        """Dias restantes de assinatura"""
+        if not self.expires_at:
+            return 0
+        delta = self.expires_at - datetime.utcnow()
+        return max(0, delta.days)
+
+    @property
+    def status_text(self):
+        """Texto do status"""
+        if not self.is_active:
+            return "❌ Inativo"
+        if self.expires_at and self.expires_at.year > 2099:
+            return "👑 Vitalício"
+        return f"✅ Ativo ({self.days_remaining} dias)"
+
+    def __repr__(self):
+        return f"<UserSubscription user_id={self.user_id} active={self.is_active}>"
+
+
 # Criar engine e sessão
-def init_db(
-    database_url: Optional[str] = os.getenv(
-        'DATABASE_URL', 'sqlite:///erome_bot.db'
-    )
-):
+def init_db(database_url: Optional[str] = None):
+    """
+    Inicializa a conexão com o banco de dados
+
+    Args:
+        database_url: URL do banco de dados (opcional)
+
+    Returns:
+        Session: Sessão do SQLAlchemy
+    """
+    if database_url is None:
+        database_url = os.getenv('DATABASE_URL', 'sqlite:///erome_bot.db')
+
     engine = create_engine(str(database_url))
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)

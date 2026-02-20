@@ -1,17 +1,24 @@
-import logging
+#!/usr/bin/env python3
+"""
+Handlers para comandos de start e mensagens gerais
+"""
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from bot.keyboards.inline import get_main_keyboard
-from config.constants import START_MESSAGE
+from config.custom_logger import bot_logger
+from config.settings import settings
 from database.models import User, init_db
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler do comando /start"""
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handler para comando /start
+    Mostra menu principal com botões
+    """
     user = update.effective_user
+    bot_logger.info(f'✅ Usuário {user.id} iniciou o bot')
 
     # Registrar/atualizar usuário no banco
     session = init_db()
@@ -27,69 +34,84 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             session.add(db_user)
             session.commit()
-            logging.info(f'Novo usuário: {user.id} - {user.first_name}')
-
+            bot_logger.info(f'📝 Novo usuário registrado: {user.id}')
     except Exception as e:
-        logging.error(f'Erro ao registrar usuário: {e}')
+        bot_logger.error(f'Erro ao registrar usuário: {e}')
     finally:
         session.close()
 
     # Mensagem de boas-vindas
-    welcome_msg = f"""
-🎬 *Bem-vindo, {user.first_name}!*
+    welcome_text = f"""
+🎉 *BEM-VINDO AO EROME BOT!* 🎉
 
-{START_MESSAGE}
+👋 Olá {user.first_name}!
+
+🤖 *O que eu posso fazer por você:*
+• 📹 Postar vídeos automaticamente no grupo
+• 💰 Gerenciar assinaturas via PIX
+• 🔄 Atualizações diárias de conteúdo
+
+👇 *Escolha uma opção abaixo:*
     """
 
-    # Teclado principal
-    keyboard = get_main_keyboard()
+    # Criar teclado com botões
+    keyboard = [
+        [
+            InlineKeyboardButton("💎 VER PLANOS", callback_data="sub_show_plans"),
+        ],
+        [
+            InlineKeyboardButton("❓ SUPORTE", url="https://t.me/lunaSafe_bot"),
+        ],
+        [
+            InlineKeyboardButton("📊 MEU STATUS", callback_data="sub_check_status"),
+            InlineKeyboardButton("🎬 ÚLTIMOS VÍDEOS", callback_data="last_videos"),
+        ]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        welcome_msg, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard
+        welcome_text,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler do comando /help"""
+    """Handler para comando /help"""
     help_text = """
-❓ *Ajuda - Erome Bot*
+❓ *AJUDA - EROME BOT*
 
-*Comandos disponíveis:*
-/start - Iniciar o bot
+📌 *Comandos disponíveis:*
+/start - Menu principal
 /planos - Ver planos de assinatura
-/status - Ver status da sua assinatura
-/ultimos - Ver últimos vídeos postados
-/help - Esta mensagem
+/status - Status da sua assinatura
+/ultimos - Últimos vídeos postados
+/ping - Testar conexão
 
-*Como funciona:*
-1️⃣ Escolha um plano (semanal ou mensal)
-2️⃣ Pague via PIX
-3️⃣ Receba acesso ao canal VIP
-4️⃣ Vídeos novos todo dia!
+💡 *Dúvidas?* Entre em contato com @lunaSafe_bot
 
-*Dúvidas?* Entre em contato com @admin
+🎯 *Grupo oficial:* @xnovinhashot
     """
 
     await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler para mensagens de texto não-comando"""
-    text = update.message.text.lower()
+    """
+    Handler para mensagens de texto que não são comandos
+    """
+    user = update.effective_user
+    message = update.message.text
 
-    if text in ['planos', '💰 planos', 'assinatura']:
-        from .subscription import show_plans
+    bot_logger.info(f'Mensagem de {user.id}: {message[:50]}')
 
-        await show_plans(update, context)
-    elif text in ['status', '📊 status', 'minha conta']:
-        from .subscription import check_status
+    # Resposta padrão para mensagens não reconhecidas
+    response = """
+🤔 *Não entendi seu comando.*
 
-        await check_status(update, context)
-    elif text in ['últimos vídeos', '🎬 vídeos', 'videos']:
-        from .videos import last_videos
+Use /start para ver o menu principal
+ou /help para lista de comandos.
+    """
 
-        await last_videos(update, context)
-    else:
-        await update.message.reply_text(
-            'Use /start para ver as opções disponíveis!'
-        )
+    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)

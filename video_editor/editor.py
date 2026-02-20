@@ -87,28 +87,28 @@ class VideoEditor:
             return {'duration': 0, 'width': 0, 'height': 0}
 
     def get_random_crop_time(self, duration: float) -> tuple:
-        """
-        Gera tempos de corte aleatórios entre 15-20 segundos
+            """
+            Gera tempos de corte aleatórios entre 7 segundos
 
-        Args:
-            duration: Duração total do vídeo
+            Args:
+                duration: Duração total do vídeo
 
-        Returns:
-            Tuple (start_time, end_time)
-        """
-        # Duração do corte (15-20 segundos)
-        crop_duration = random.randint(15, 20)
+            Returns:
+                Tuple (start_time, end_time)
+            """
+            # Duração do corte (7 segundos fixos)
+            crop_duration = 7  # Alterado de 15-20 para 7 segundos
 
-        # Garantir que não ultrapasse a duração do vídeo
-        if duration <= crop_duration:
-            return (0, duration)
+            # Garantir que não ultrapasse a duração do vídeo
+            if duration <= crop_duration:
+                return (0, duration)
 
-        # Ponto de início aleatório
-        max_start = duration - crop_duration
-        start_time = random.uniform(0, max_start)
-        end_time = start_time + crop_duration
+            # Ponto de início aleatório
+            max_start = duration - crop_duration
+            start_time = random.uniform(0, max_start)
+            end_time = start_time + crop_duration
 
-        return (start_time, end_time)
+            return (start_time, end_time)
 
     async def process_video(self, input_path: Path, title: str = '') -> Path:
         """
